@@ -1,0 +1,16 @@
+einops>=0.7.0
+fvcore>=0.1.5.post20221221
+matplotlib>=3.7.0
+mamba-ssm>=2.2.0
+numpy>=1.23.0
+pillow>=9.0.0
+progress>=1.6
+pykalman>=0.9.5
+pysparkling>=0.6.2
+pyyaml>=6.0
+scipy>=1.10.0
+six>=1.16.0
+tensorboard>=2.12.0
+thop>=0.1.1.post2209072238
+torch>=2.0.0
+wandb>=0.16.0

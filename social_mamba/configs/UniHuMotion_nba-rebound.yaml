@@ -1,0 +1,35 @@
+SEED: 0
+EXPERIMENT: 'default_experiment'
+TRAIN:
+    batch_size: 32
+    epochs: 100
+    num_workers: 0
+    input_track_size: 8
+    output_track_size: 12
+    lr: 0.001
+    lr_decay: 1
+    lr_drop: true
+    aux_weight: 0.2
+    val_frequency: 5
+    optimizer: "adam"
+    max_grad_norm: 1.0
+DATA:
+    train_datasets:
+        - nba_rebound
+    chunk_size: 4
+MODEL:
+    token_num: 81
+    num_layers_local: 6
+    num_layers_global: 6
+    num_layers_ego: 2
+    num_layers_goal: 2
+    dropout: 0.1
+    num_heads: 4
+    dim_hidden: 128
+    dim_feedforward: 512
+    type: "transmotion"
+    social_grid_type: "none"
+    eval_single: false
+    checkpoint: ""
+    output_scale: 1
+    dev: false

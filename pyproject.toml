@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "social-mamba"
+version = "0.1.0"
+description = "Social-Mamba trajectory forecasting code built on Multi-Transmotion."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+authors = [
+  {name = "Po-Chien Luan"},
+  {name = "Alexandre Alahi"}
+]
+
+[tool.setuptools.packages.find]
+include = ["social_mamba*"]

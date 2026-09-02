@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# OS/editor
+.DS_Store
+__MACOSX/
+.vscode/
+.idea/
+
+# Data, outputs, and local experiment state
+data/
+experiments/
+outputs/
+multi_outputs/
+output_*/
+rebuttal_outputs/
+runs/
+wandb/
+*.log
+
+# Model weights
+*.pt
+*.pth
+*.pth.tar
+*.ckpt
+!checkpoints/README.md
+
+# Archives
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+
+# Legacy/local development copies kept outside the public release branch
+ft_NBA/
+ft_NBA_mamba_dev_seq*/
+pretrain/
+searching_scripts/
+release/
+compare_vis*.py
+eval.sh
