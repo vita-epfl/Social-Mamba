@@ -21,7 +21,7 @@ Official code release for **Social-Mamba**, an ECCV 2026 paper on socially aware
 
 ```text
 social_mamba/              # model, training, and evaluation code
-social_mamba/configs/      # public configs for NBA, NBA event splits, JRDB, and SDD
+social_mamba/configs/      # NBA-Full, NBA/LED, NBA event splits, JRDB, and SDD
 social_mamba/utils/        # metrics and shared utilities
 UniHuMotion_trajnetpp/     # Multi-Transmotion CSV-to-UniHuMotion converter
 UniHuMotion_cache/         # UniHuMotion-to-cache generator used by training/eval
@@ -69,6 +69,7 @@ Examples:
 data/cache/NBA/train/*.pkl
 data/cache/NBA/val/*.pkl
 data/cache/NBA/test/*.pkl
+data/cache/NBA_full/test/*.pkl
 data/cache/nba_score/test/*.pkl
 data/cache/nba_rebound/test/*.pkl
 data/cache/jrdb/test/*.pkl
@@ -110,7 +111,21 @@ extract_data/NBA/raw/nba_train.npy
 extract_data/NBA/raw/nba_test.npy
 ```
 
-Then run the bundled end-to-end script:
+**NBA-Full (Table 1):** keep all 11 agents (10 players and the ball). Run:
+
+```bash
+bash scripts/preprocess_nba_full.sh
+```
+
+This creates `data/UniHuMotion/UHM_NBA_full/{train,val,test}/*.ndjson` and `data/cache/NBA_full/{train,val,test}/*.pkl`. To build only the evaluation split:
+
+```bash
+PREPROCESS_SPLIT=test bash scripts/preprocess_nba_full.sh
+```
+
+The full test set contains all **47,940 clips**, with each of the 11 agents evaluated as primary, for **527,340 primary trajectories**. Use 10 observed frames, 20 predicted frames (4 seconds), and 20 prediction modes. No test subset or additional checkpoint selection is required. The original 81-token cache format is large; ensure sufficient storage before preprocessing.
+
+**NBA/LED (legacy eight-agent setup):** the older `NBA` checkpoint and cache are separate from the NBA-Full Table 1 experiment. To prepare this setup instead:
 
 ```bash
 bash scripts/preprocess_nba.sh
@@ -120,15 +135,16 @@ This script performs three steps:
 
 ```text
 extract_data/NBA/raw/*.npy
-  -> extract_data/NBA/output_csv/nba_{train,val,test}.csv
+  -> temporary nba_{train,val,test}.csv
   -> data/UniHuMotion/UHM_NBA/{train,val,test}/*.ndjson
   -> data/cache/NBA/{train,val,test}/*.pkl
 ```
 
-The NBA defaults match the public config: `obs_len=10`, `pred_len=20`, `max_agents=8`, and `chunk_size=4`. They can be overridden:
+Both setups use `obs_len=10`, `pred_len=20`, and `chunk_size=4`. NBA/LED uses `max_agents=8`; NBA-Full requires `max_agents=11`. Do not rename or reuse an eight-agent cache as `NBA_full`. Existing preprocessing outputs are not overwritten; move them aside before rebuilding. Raw files and the cache root can be configured:
 
 ```bash
-OBS_LEN=10 PRED_LEN=20 MAX_AGENTS=8 CHUNK_SIZE=4 bash scripts/preprocess_nba.sh
+RAW_DIR=/path/to/nba/raw SOCIAL_MAMBA_CACHE_DIR=/path/to/cache \
+  PREPROCESS_SPLIT=test bash scripts/preprocess_nba_full.sh
 ```
 
 For the NBA event-split tasks, use the same LED/Multi-Transmotion data convention and cache names `nba_score` and `nba_rebound`. These configs use `obs_len=8` and `pred_len=12`.
@@ -165,22 +181,25 @@ python UniHuMotion_cache/cache_generator.py \
   --chunk-size 4
 ```
 
-For NBA, the equivalent cache-only command is:
+For NBA-Full, the equivalent cache-only command is:
 
 ```bash
 python UniHuMotion_cache/cache_generator.py \
-  --UniHuMotion_dataset UHM_NBA \
+  --UniHuMotion_dataset UHM_NBA_full \
   --split all \
   --obs-len 10 \
-  --max-agents 8 \
+  --max-agents 11 \
   --chunk-size 4
 ```
 
 ## Checkpoints
 
-Pretrained weights are distributed through this repository's GitHub Releases page rather than tracked in git. Download the release assets and place them in this layout:
+Pretrained weights are distributed through [GitHub Releases](https://github.com/vita-epfl/Social-Mamba/releases). Download the **NBA-Full Table 1 checkpoint** `social_mamba_nba_full.pth.tar` from [v1.1](https://github.com/vita-epfl/Social-Mamba/releases/tag/v1.1). The [v1.0 archive](https://github.com/vita-epfl/Social-Mamba/releases/tag/v1.0) contains the other five checkpoints, including the legacy NBA/LED checkpoint, not the NBA-Full Table 1 model.
+
+Place the files in this layout:
 
 ```text
+checkpoints/nba_full/social_mamba_nba_full.pth.tar
 checkpoints/nba/social_mamba_nba.pth.tar
 checkpoints/nba_score/social_mamba_nba_score.pth.tar
 checkpoints/nba_rebound/social_mamba_nba_rebound.pth.tar
@@ -188,21 +207,33 @@ checkpoints/jrdb/social_mamba_jrdb.pth.tar
 checkpoints/sdd/social_mamba_sdd.pth.tar
 ```
 
-The planned release assets are:
+The NBA-Full checkpoint has SHA-256:
 
 ```text
-social_mamba_nba.pth.tar
-social_mamba_nba_score.pth.tar
-social_mamba_nba_rebound.pth.tar
-social_mamba_jrdb.pth.tar
-social_mamba_sdd.pth.tar
+ee661f5ae77c56d694f97aa8b1856201cd5f4503e30925f5d294c19df7dfc64b
 ```
 
-If you publish from a fork or mirror, attach the same files to the corresponding GitHub Release and keep the local filenames unchanged.
+It is the epoch-81 checkpoint from `UMamba_v3_dset_NBA_full_lr_0.0005_decay_1.0_l_local_4_l_global_6_l_ego_2_l_goal_2_dropout_0.1_batch_128`.
 
 ## Evaluation
 
-NBA:
+NBA-Full (Table 1):
+
+```bash
+python -m social_mamba.evaluate \
+  --ckpt checkpoints/nba_full/social_mamba_nba_full.pth.tar \
+  --metric ade_fde --json-out nba_full_results.json
+```
+
+Verified on a V100 using the compiled Mamba kernel:
+
+| Setup | Input agents | Parameters | ADE (4 s) | FDE (4 s) |
+| --- | ---: | ---: | ---: | ---: |
+| NBA-Full, Table 1 | 11 | 1,914,030 | 0.7198 | 0.9187 |
+
+The reported errors use LED's court-length convention: errors in exact meters are multiplied by `(1 / 0.3048) * (28 / 94)`. Evaluation reads the configuration embedded in the checkpoint, not a separate YAML file. `--batch-size` sets cache chunks per batch, normally four primary trajectories per chunk.
+
+NBA/LED (legacy checkpoint, not Table 1):
 
 ```bash
 python -m social_mamba.evaluate \
@@ -254,6 +285,14 @@ python -m social_mamba.train \
   --exp_name social_mamba_jrdb
 ```
 
+For the NBA-Full architecture and training hyperparameters used in Table 1:
+
+```bash
+python -m social_mamba.train \
+  --cfg social_mamba/configs/UniHuMotion_NBA_full.yaml \
+  --exp_name social_mamba_nba_full
+```
+
 Weights & Biases logging is disabled by default. Enable it explicitly after logging in locally with `wandb login`:
 
 ```bash
@@ -268,9 +307,18 @@ For the NBA event-split tasks, use `social_mamba/configs/UniHuMotion_nba-score.y
 ## Notes for Reproducibility
 
 - `padding_mask` follows the PyTorch convention: `True` means padded/invalid.
+- NBA-Full uses local/global/ego/goal depths `4/6/2/2`, hidden dimension 128, learning rate 0.0005, and batch size 128. Its temporal and global encoders reuse their block weights across depth, matching the original implementation and the 1.9M parameter count.
+- Earlier release code deep-copied those encoder blocks, inflating the parameter count; this is corrected. The original checkpoints store shared weights, so restoring sharing does not change their loaded predictions. The older released NBA checkpoint belongs to the separate NBA/LED run and does not reproduce Table 1.
+- Training now saves `config.yaml` after command-line overrides. For older runs, the checkpoint's embedded config is authoritative because the on-disk YAML was saved before overrides.
 - The default social-grid sorting mode is `none`; pass `--social_grid_type distance`, `risk`, `intent`, `kinematic`, or `random` to override it.
 - In JRDB/SDD experiments the effective padded agent budget is fixed at `N=8`. Runtime therefore reflects a fixed agent-token budget in the reported setting. If the configured agent budget is increased, Social-Mamba scales approximately linearly with the padded number of agents because its Mamba blocks process serialized agent-time tokens.
 - SDD pixel-scale reporting uses `data/SDD_meter2pixel_scale.npy` when available; otherwise normalized coordinates are reported.
+
+Run the focused reproducibility regression tests in the installed environment:
+
+```bash
+python -m unittest discover -s tests -v
+```
 
 ## Acknowledgements
 

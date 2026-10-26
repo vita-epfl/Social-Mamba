@@ -62,6 +62,8 @@ def edit_goal_file(old_filename, new_filename):
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--input_file', default=None, help='Override the input CSV path')
+    parser.add_argument('--output_dir', default='output_pre', help='Directory for converted split files')
     parser.add_argument('--obs_len', type=int, default=9,
                         help='Length of observation')
     parser.add_argument('--pred_len', type=int, default=12,
@@ -108,21 +110,16 @@ def main():
     if args.train_fraction == 1.0 and args.val_fraction == 0.0:
         ## NBA dataset
         temp_name = 'nba_train'
-        ## train
-        write(UniHuMotion(sc,'data/UniHuMotion_NBA/'+temp_name+'.csv'),
-                'output_pre/{split}/'+temp_name+'.ndjson', args)
     elif args.train_fraction == 0.0 and args.val_fraction == 1.0:
         temp_name = 'nba_val'
-        ## val
-        write(UniHuMotion(sc,'data/UniHuMotion_NBA/'+temp_name+'.csv'),
-                'output_pre/{split}/'+temp_name+'.ndjson', args)
     elif args.train_fraction == 0.0 and args.val_fraction == 0.0:
         temp_name = 'nba_test'
-        ## test
-        write(UniHuMotion(sc,'data/UniHuMotion_NBA/'+temp_name+'.csv'),
-                'output_pre/{split}/'+temp_name+'.ndjson', args)
     else:
         raise ValueError("Invalid train and val fractions for UniHuMotion")
+
+    input_file = args.input_file or os.path.join('data', 'UniHuMotion_NBA', temp_name+'.csv')
+    write(UniHuMotion(sc, input_file),
+          os.path.join(args.output_dir, '{split}', temp_name+'.ndjson'), args)
     
 
 if __name__ == '__main__':

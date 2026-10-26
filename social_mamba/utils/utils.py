@@ -63,10 +63,13 @@ def load_config(path, exp_name="default"):
         config["OUTPUT"] = {}
     config["OUTPUT"]["log_dir"], config["OUTPUT"]["ckpt_dir"], config["OUTPUT"]["runs_dir"] = init_output_dirs(config["EXPERIMENT"], exp_name=exp_name)
 
-    with open(os.path.join(config["OUTPUT"]["ckpt_dir"], "config.yaml"), 'w') as f:
-        yaml.dump(config, f)
-
     return config
+
+
+def save_config(config):
+    """Persist the final settings after command-line overrides are applied."""
+    with open(os.path.join(config["OUTPUT"]["ckpt_dir"], "config.yaml"), 'w') as f:
+        yaml.safe_dump(config, f)
 
 class AverageMeter(object):
     """

@@ -36,8 +36,14 @@ class MultiPersonTrajPoseDataset(torch.utils.data.Dataset):
         joint_and_mask_temp = []
 
         data_name = dataset_short_name(self.name)
-        cache_dir = REPO_ROOT / "data" / "cache" / data_name / self.split
+        cache_root = Path(os.environ.get("SOCIAL_MAMBA_CACHE_DIR", REPO_ROOT / "data" / "cache"))
+        cache_dir = cache_root / data_name / self.split
         cache_dir.mkdir(parents=True, exist_ok=True)
+        if any(cache_dir.glob("*.pkl")):
+            raise FileExistsError(
+                f"Cache directory already contains .pkl files: {cache_dir}. "
+                "Use an empty cache directory to avoid mixing preprocessing settings."
+            )
 
         uhm_dir = REPO_ROOT / "data" / "UniHuMotion" / self.name
         train_scenes, _, _ = prepare_data(uhm_dir, subset=self.split, sample=1.0, goals=False, dataset_name=self.name)

@@ -1,4 +1,6 @@
 import argparse
+import json
+from pathlib import Path
 import torch
 import random
 import numpy as np
@@ -33,19 +35,30 @@ def inference(model, config, input_joints, padding_mask, out_len=14):
     return output_traj
 
 
+def best_of_k_errors(prediction, target):
+    """Return independent minADE and minFDE for each primary trajectory."""
+    distances = torch.linalg.vector_norm(prediction[..., :2] - target[:, None, :, :2], dim=-1)
+    return distances.mean(dim=-1).min(dim=-1).values, distances[:, :, -1].min(dim=-1).values
+
+
+def nba_reporting_scale(dataset_name):
+    # LED reports a 94-foot court as 28 meters instead of the exact foot conversion.
+    return (1 / 0.3048) * (28 / 94) if dataset_name in ("NBA", "NBA_full") else 1.0
+
+
 def evaluate_ade_fde(model, dataloader, bs, config, logger, return_all=False, bar_prefix="", per_joint=False, show_avg=False):
     out_F = config["TRAIN"]["output_track_size"]
-    bar = Bar(f"EVAL ADE_FDE", fill="#", max=len(dataloader))
-
+    bar = Bar("EVAL ADE_FDE", fill="#", max=len(dataloader))
     num_test_samples = 0
-    batch_id = 0
-    ade = 0
-    fde = 0
-    ade_batch = 0
-    fde_batch = 0
+    ade_sum = fde_sum = 0.0
 
-    for i, batch in enumerate(dataloader):
+    for batch in dataloader:
         joints, masks, padding_mask = batch
+        if config["DATA"]["train_datasets"][0] == "NBA_full" and not torch.all((~padding_mask.bool()).sum(dim=1) == 11):
+            raise ValueError(
+                "NBA-Full requires all 11 agents per primary trajectory. "
+                "Rebuild a separate cache with scripts/preprocess_nba_full.sh; do not reuse eight-agent NBA caches."
+            )
         joints = joints[:, :, :, :1, :]
         masks = masks[:, :, :, :1]
         padding_mask = padding_mask.to(config["DEVICE"])
@@ -62,39 +75,18 @@ def evaluate_ade_fde(model, dataloader, bs, config, logger, return_all=False, ba
 
 
         pred_joints = inference(model, config, in_joints, padding_mask, out_len=out_F)
-        out_joints = out_joints.cpu()
+        prediction = pred_joints.permute(1, 0, 2, 3).cpu()
+        ade, fde = best_of_k_errors(prediction, out_joints[:, :, 0].cpu())
+        # Accumulate in float64 so the large NBA-Full test set does not drift.
+        ade_sum += ade.double().sum().item()
+        fde_sum += fde.double().sum().item()
+        num_test_samples += len(ade)
+        bar.next()
 
-        pred_joints = pred_joints.cpu().permute(1,0,2,3)
-
-        for k in range(len(out_joints)):
-
-            gt_xy = out_joints[k,:,0,:2]
-            pred_xy = pred_joints[k,:,:,:2]
-            _,temp_K,temp_out_F,_ = pred_joints.shape
-            norm_multi_modal = torch.full((temp_K, temp_out_F), float('nan')).to(pred_joints.device)
-
-            for i in range(temp_K):
-                norm_multi_modal[i,:] = torch.norm(pred_xy[i,:] - gt_xy, p=2, dim=-1)
-
-            norm_multi_modal_mean = torch.mean(norm_multi_modal,dim=-1)
-            norm,ind_min = torch.min(norm_multi_modal_mean,dim=-1) #out_F
-
-            ade_batch += norm
-
-            scene_fde,_ = torch.min(norm_multi_modal[:,-1],dim=0)
-
-            fde_batch += scene_fde
-            num_test_samples+=1
-
-        if batch_id % 1e2 == 0:
-            print(f'Finished {batch_id*bs*4/1000} k samples')
-
-        batch_id+=1
-
-    ade = ade_batch/num_test_samples
-    fde = fde_batch/num_test_samples
-
-    return ade, fde, num_test_samples
+    bar.finish()
+    if num_test_samples == 0:
+        raise ValueError("No evaluation samples found. Check the dataset and cache split.")
+    return ade_sum / num_test_samples, fde_sum / num_test_samples, num_test_samples
 
 def evaluate_ade_fde_diversity(model, dataloader, bs, config, logger, return_all=False, bar_prefix="", per_joint=False, show_avg=False):
     in_F, out_F = 10, 20
@@ -188,10 +180,11 @@ def evaluate_ade_fde_diversity(model, dataloader, bs, config, logger, return_all
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--ckpt", type=str,  help="checkpoint path")
-    parser.add_argument("--split", type=str, default="test", help="Split to use. one of [train, test, valid]")
-    parser.add_argument("--metric", type=str, default="vim", help="Evaluation metric. One of (vim, mpjpe)")
-    # parser.add_argument()
+    parser.add_argument("--ckpt", type=str, required=True, help="Trusted checkpoint path")
+    parser.add_argument("--split", choices=("train", "val", "test"), default="test")
+    parser.add_argument("--metric", choices=("ade_fde",), default="ade_fde")
+    parser.add_argument("--batch-size", type=int, default=None, help="Cache chunks per batch (normally four trajectories per chunk)")
+    parser.add_argument("--json-out", type=Path, default=None, help="Save evaluation metrics and protocol metadata")
     args = parser.parse_args()
 
     random.seed(0)
@@ -200,7 +193,7 @@ if __name__ == "__main__":
 
     logger = create_logger('')
     logger.info(f'Loading checkpoint from {args.ckpt}')
-    ckpt = torch.load(args.ckpt, map_location = torch.device('cpu'))
+    ckpt = torch.load(args.ckpt, map_location=torch.device('cpu'), weights_only=False)
     config = ckpt['config']
 
     if torch.cuda.is_available():
@@ -219,15 +212,16 @@ if __name__ == "__main__":
     model.load_state_dict(pretrained_dict)
     in_F, out_F = config['TRAIN']['input_track_size'], config['TRAIN']['output_track_size']
 
-    # (a) 1 foot = 0.3048 meters, (b) 94 feet = 28 meters
-    # To fairly compare with leapfrog's implementation on NBA, we rescale the length unit from (a) to (b)
-    # Leapfrog: https://github.com/MediaBrain-SJTU/LED/blob/aae048a85292a24c2218de5fe9b4d20d3542bf04/visualization/draw_mean_variance.ipynb#L34
     name = config['DATA']['train_datasets']
-    rescale = (1/0.3048)*(28/94) if name[0] == "NBA" else 1.0
+    rescale = nba_reporting_scale(name[0])
+    parameter_count = sum(p.numel() for p in model.parameters())
+    logger.info("Unique model parameters: %d", parameter_count)
 
     dataset = create_dataset(name[0], logger, split=args.split, track_size=(in_F+out_F), track_cutoff=in_F)
 
-    bs = config['TRAIN']['batch_size']//4 # chunk_size = 4
+    bs = args.batch_size if args.batch_size is not None else max(1, config['TRAIN']['batch_size']//4)
+    if bs < 1:
+        parser.error("--batch-size must be positive")
     dataloader = DataLoader(dataset, batch_size=bs, num_workers=config['TRAIN']['num_workers'], shuffle=False, collate_fn=collate_batch)
 
     ade,fde,num_samples = evaluate_ade_fde(model, dataloader, bs, config, logger, return_all=True)
@@ -236,3 +230,12 @@ if __name__ == "__main__":
     print('ADE: ', ade*rescale)
     print('FDE: ', fde*rescale)
     print('Test samples: ', num_samples)
+    if args.json_out is not None:
+        result = {
+            "dataset": name[0], "split": args.split, "checkpoint": str(Path(args.ckpt).resolve()),
+            "parameters": parameter_count, "input_frames": in_F, "output_frames": out_F,
+            "prediction_modes": 20, "primary_trajectories": num_samples,
+            "reporting_scale": rescale, "ade": ade * rescale, "fde": fde * rescale,
+        }
+        args.json_out.parent.mkdir(parents=True, exist_ok=True)
+        args.json_out.write_text(json.dumps(result, indent=2) + "\n")

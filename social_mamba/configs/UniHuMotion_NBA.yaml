@@ -20,8 +20,8 @@ DATA:
 MODEL:
     token_num: 81 # Traj (1) + 2d/3d BB (2) + 3d P (39) + 2d P(39)
     num_layers_local: 6 # search range:  [4, 6]
-    num_layers_global: 4  # search range: [4, 6]
-    num_layers_ego: 4 # search range: [4, 6]
+    num_layers_global: 6  # NBA/LED checkpoint; NBA-Full has its own config.
+    num_layers_ego: 2
     num_layers_goal: 4
     dropout: 0.1 # search range: [0.1, 0.2, 0.3]
     num_heads: 4

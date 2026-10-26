@@ -22,9 +22,9 @@ try:
 except ImportError:
     from model import create_model_UMamba
 try:
-    from .utils.utils import create_logger, load_default_config, load_config, AverageMeter
+    from .utils.utils import create_logger, load_default_config, load_config, save_config, AverageMeter
 except ImportError:
-    from utils.utils import create_logger, load_default_config, load_config, AverageMeter
+    from utils.utils import create_logger, load_default_config, load_config, save_config, AverageMeter
 try:
     from .utils.metrics import FT_Traj_MSE_LOSS_MULTI_MODAL_UNIMOTION
 except ImportError:
@@ -410,6 +410,8 @@ if __name__ == "__main__":
         cfg["DEVICE"] = devices
     else:
         cfg["DEVICE"] = "cpu"
+
+    save_config(cfg)
 
     dataset = cfg["DATA"]["train_datasets"]
 

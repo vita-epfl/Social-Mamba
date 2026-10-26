@@ -95,7 +95,7 @@ class MultiPersonTrajPoseDataset(torch.utils.data.Dataset):
                 )
             for filename in sorted(os.listdir(directory)):
                 path = directory / filename
-                if path.is_file():
+                if path.is_file() and path.suffix == ".pkl":
                     self.datalist.append(str(path))
 
     def __len__(self):

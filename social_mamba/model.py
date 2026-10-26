@@ -1,5 +1,3 @@
-import copy
-
 import torch
 import torch.nn as nn
 import numpy as np
@@ -37,7 +35,8 @@ class MambaEncoderCMT(nn.Module):
     """
     def __init__(self, encoder_layer, num_layers: int, norm: Optional[nn.Module] = None):
         super().__init__()
-        self.layers = nn.ModuleList([copy.deepcopy(encoder_layer) for _ in range(num_layers)])
+        # The paper checkpoints share temporal/global block weights across depth.
+        self.layers = nn.ModuleList([encoder_layer for _ in range(num_layers)])
         self.num_layers = num_layers
         self.norm = norm
 
@@ -124,7 +123,7 @@ class MambaEncoderST(nn.Module):
     """
     def __init__(self, encoder_layer, num_layers: int, norm: Optional[nn.Module] = None):
         super().__init__()
-        self.layers = nn.ModuleList([copy.deepcopy(encoder_layer) for _ in range(num_layers)])
+        self.layers = nn.ModuleList([encoder_layer for _ in range(num_layers)])
         self.num_layers = num_layers
         self.norm = norm
 
